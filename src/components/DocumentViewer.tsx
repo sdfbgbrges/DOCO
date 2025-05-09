@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
@@ -29,6 +29,9 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
   const [pageWidth, setPageWidth] = useState<number>(0);
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [currentPoints, setCurrentPoints] = useState<{ x: number; y: number }[]>([]);
+  const [showThumbnails, setShowThumbnails] = useState(true);
+  const [thumbnailsWidth, setThumbnailsWidth] = useState(200);
+  const [isDraggingThumbnails, setIsDraggingThumbnails] = useState(false);
   
   // Get the file for this document
   const file = document ? files.find(f => f.id === document.fileId) : null;
@@ -52,7 +55,9 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     if (document) {
       setNumPages(numPages);
-      updateDocumentPage(document.id, document.currentPage > numPages ? 1 : document.currentPage);
+      // Update document with total pages
+      const updatedDoc = { ...document, totalPages: numPages };
+      documents.splice(documents.indexOf(document), 1, updatedDoc);
     }
   };
   
@@ -73,14 +78,28 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
   }, [canvasRef, uiState.fullscreen]);
   
   // Handle page changes
-  const changePage = (offset: number) => {
+  const changePage = useCallback((offset: number) => {
     if (!document || !numPages) return;
     
     const newPage = document.currentPage + offset;
     if (newPage >= 1 && newPage <= numPages) {
       updateDocumentPage(document.id, newPage);
     }
-  };
+  }, [document, numPages, updateDocumentPage]);
+  
+  // Handle keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        changePage(-1);
+      } else if (e.key === 'ArrowRight') {
+        changePage(1);
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [changePage]);
   
   // Handle zoom changes
   const changeZoom = (factor: number) => {
@@ -129,161 +148,225 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
     setCurrentPoints([]);
   };
   
+  // Handle text annotation
+  const handleTextAnnotation = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!document || toolState.activeTool !== 'text') return;
+    
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    const x = (e.clientX - rect.left) / document.zoom;
+    const y = (e.clientY - rect.top) / document.zoom;
+    
+    const text = prompt('Enter text:');
+    if (text) {
+      addAnnotation(document.id, {
+        type: 'text',
+        color: toolState.color,
+        thickness: toolState.thickness,
+        text,
+        position: { x, y },
+        page: document.currentPage
+      });
+    }
+  };
+  
   if (!document) {
     return <div className="flex-1 flex items-center justify-center">Document not found</div>;
   }
   
-  // Determine the view class based on fullscreen state
-  const viewClass = uiState.fullscreen 
-    ? 'fixed inset-0 z-50 bg-gray-900' 
-    : 'flex-1 relative overflow-hidden';
+  // Calculate rotation transform origin
+  const rotationStyle = {
+    transform: `scale(${document.zoom}) rotate(${document.rotation}deg)`,
+    transformOrigin: 'center center',
+    transition: 'transform 0.2s ease'
+  };
   
   return (
-    <div className={viewClass}>
-      {/* Document Toolbar (HEADER 3) */}
+    <div className={uiState.fullscreen ? 'fixed inset-0 z-50 bg-gray-900' : 'flex-1 relative overflow-hidden'}>
+      {/* Document Toolbar */}
       <DocumentToolbar documentId={documentId} />
       
-      {/* Document Display Area */}
-      <div 
-        ref={canvasRef}
-        className="h-full overflow-auto flex justify-center bg-gray-800 p-4"
-        onMouseDown={startDrawing}
-        onMouseMove={draw}
-        onMouseUp={endDrawing}
-        onMouseLeave={endDrawing}
-      >
-        {pdfUrl ? (
+      {/* Main Content Area */}
+      <div className="flex h-[calc(100%-3rem)]">
+        {/* Thumbnails Sidebar */}
+        {showThumbnails && (
           <div 
-            style={{ 
-              transform: `scale(${document.zoom}) rotate(${document.rotation}deg)`,
-              transformOrigin: 'top center',
-              transition: 'transform 0.2s ease'
-            }}
+            className="bg-gray-900 flex-none relative"
+            style={{ width: thumbnailsWidth }}
           >
-            <Document
-              file={pdfUrl}
-              onLoadSuccess={onDocumentLoadSuccess}
-              loading={
-                <div className="flex items-center justify-center h-96">
-                  <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+            {/* Thumbnails */}
+            <div className="h-full overflow-y-auto p-2">
+              {Array.from({ length: numPages || 0 }).map((_, index) => (
+                <div
+                  key={index}
+                  className={`mb-2 cursor-pointer rounded overflow-hidden ${
+                    document.currentPage === index + 1 ? 'ring-2 ring-primary-500' : ''
+                  }`}
+                  onClick={() => updateDocumentPage(document.id, index + 1)}
+                >
+                  <Document file={pdfUrl}>
+                    <Page
+                      pageNumber={index + 1}
+                      width={thumbnailsWidth - 16}
+                      renderTextLayer={false}
+                      renderAnnotationLayer={false}
+                    />
+                  </Document>
                 </div>
-              }
-              error={
-                <div className="text-center p-8">
-                  <p className="text-red-500 font-semibold mb-2">Error loading document</p>
-                  <p className="text-gray-200">Unable to load the PDF file.</p>
-                </div>
-              }
-            >
-              {uiState.viewMode === 'single' ? (
-                <Page
-                  pageNumber={document.currentPage}
-                  width={pageWidth * 0.8} // 80% of container width
-                  renderTextLayer={true}
-                  renderAnnotationLayer={true}
-                  className="shadow-lg rounded mb-4"
-                />
-              ) : (
-                <div className="flex gap-4">
+              ))}
+            </div>
+            
+            {/* Resize Handle */}
+            <div
+              className="absolute top-0 right-0 w-1 h-full cursor-col-resize bg-gray-700 hover:bg-primary-500"
+              onMouseDown={() => setIsDraggingThumbnails(true)}
+            />
+          </div>
+        )}
+        
+        {/* Document Display Area */}
+        <div 
+          ref={canvasRef}
+          className="flex-1 h-full overflow-auto flex justify-center bg-gray-800 p-4"
+          onMouseDown={startDrawing}
+          onMouseMove={draw}
+          onMouseUp={endDrawing}
+          onMouseLeave={endDrawing}
+          onClick={handleTextAnnotation}
+          onMouseMove={(e) => {
+            if (isDraggingThumbnails) {
+              const newWidth = e.clientX;
+              setThumbnailsWidth(Math.max(150, Math.min(400, newWidth)));
+            }
+          }}
+          onMouseUp={() => setIsDraggingThumbnails(false)}
+        >
+          {pdfUrl ? (
+            <div style={rotationStyle}>
+              <Document
+                file={pdfUrl}
+                onLoadSuccess={onDocumentLoadSuccess}
+                loading={
+                  <div className="flex items-center justify-center h-96">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+                  </div>
+                }
+                error={
+                  <div className="text-center p-8">
+                    <p className="text-red-500 font-semibold mb-2">Error loading document</p>
+                    <p className="text-gray-200">Unable to load the PDF file.</p>
+                  </div>
+                }
+              >
+                {uiState.viewMode === 'single' ? (
                   <Page
                     pageNumber={document.currentPage}
-                    width={pageWidth * 0.4} // 40% of container width for each page
+                    width={pageWidth * 0.8}
                     renderTextLayer={true}
                     renderAnnotationLayer={true}
                     className="shadow-lg rounded mb-4"
                   />
-                  {numPages && document.currentPage < numPages && (
+                ) : (
+                  <div className="flex gap-4">
                     <Page
-                      pageNumber={document.currentPage + 1}
-                      width={pageWidth * 0.4} // 40% of container width for each page
+                      pageNumber={document.currentPage}
+                      width={pageWidth * 0.4}
                       renderTextLayer={true}
                       renderAnnotationLayer={true}
                       className="shadow-lg rounded mb-4"
                     />
-                  )}
-                </div>
-              )}
-            </Document>
-            
-            {/* Drawing Canvas for Annotations */}
-            <svg 
-              className="absolute top-0 left-0 w-full h-full pointer-events-none"
-              style={{ zIndex: 10 }}
-            >
-              {/* Current drawing */}
-              {isDrawing && currentPoints.length > 1 && (
-                <path
-                  d={`M ${currentPoints.map(p => `${p.x},${p.y}`).join(' L ')}`}
-                  stroke={toolState.color}
-                  strokeWidth={toolState.thickness}
-                  fill="none"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  opacity={toolState.activeTool === 'highlight' ? 0.5 : 1}
-                />
-              )}
+                    {numPages && document.currentPage  < numPages && (
+                      <Page
+                        pageNumber={document.currentPage + 1}
+                        width={pageWidth * 0.4}
+                        renderTextLayer={true}
+                        renderAnnotationLayer={true}
+                        className="shadow-lg rounded mb-4"
+                      />
+                    )}
+                  </div>
+                )}
+              </Document>
               
-              {/* Saved annotations for current page */}
-              {document.annotations
-                .filter(a => a.page === document.currentPage)
-                .map((annotation, index) => {
-                  if (annotation.type === 'pencil' && annotation.points) {
-                    return (
-                      <path
-                        key={`annotation-${index}`}
-                        d={`M ${annotation.points.map(p => `${p.x},${p.y}`).join(' L ')}`}
-                        stroke={annotation.color}
-                        strokeWidth={annotation.thickness}
-                        fill="none"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    );
-                  } else if (annotation.type === 'highlight' && annotation.points) {
-                    return (
-                      <path
-                        key={`annotation-${index}`}
-                        d={`M ${annotation.points.map(p => `${p.x},${p.y}`).join(' L ')}`}
-                        stroke={annotation.color}
-                        strokeWidth={annotation.thickness}
-                        fill="none"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        opacity={0.5}
-                      />
-                    );
-                  } else if (annotation.type === 'text' && annotation.position) {
-                    return (
-                      <foreignObject
-                        key={`annotation-${index}`}
-                        x={annotation.position.x}
-                        y={annotation.position.y}
-                        width="200"
-                        height="auto"
-                      >
-                        <div
-                          style={{
-                            backgroundColor: 'white',
-                            border: '1px solid #ddd',
-                            padding: '4px',
-                            fontSize: '14px',
-                            boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
-                          }}
+              {/* Drawing Canvas for Annotations */}
+              <svg 
+                className="absolute top-0 left-0 w-full h-full pointer-events-none"
+                style={{ zIndex: 10 }}
+              >
+                {/* Current drawing */}
+                {isDrawing && currentPoints.length > 1 && (
+                  <path
+                    d={`M ${currentPoints.map(p => `${p.x},${p.y}`).join(' L ')}`}
+                    stroke={toolState.color}
+                    strokeWidth={toolState.thickness}
+                    fill="none"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity={toolState.activeTool === 'highlight' ? 0.5 : 1}
+                  />
+                )}
+                
+                {/* Saved annotations for current page */}
+                {document.annotations
+                  .filter(a => a.page === document.currentPage)
+                  .map((annotation, index) => {
+                    if (annotation.type === 'pencil' && annotation.points) {
+                      return (
+                        <path
+                          key={`annotation-${index}`}
+                          d={`M ${annotation.points.map(p => `${p.x},${p.y}`).join(' L ')}`}
+                          stroke={annotation.color}
+                          strokeWidth={annotation.thickness}
+                          fill="none"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      );
+                    } else if (annotation.type === 'highlight' && annotation.points) {
+                      return (
+                        <path
+                          key={`annotation-${index}`}
+                          d={`M ${annotation.points.map(p => `${p.x},${p.y}`).join(' L ')}`}
+                          stroke={annotation.color}
+                          strokeWidth={annotation.thickness}
+                          fill="none"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          opacity={0.5}
+                        />
+                      );
+                    } else if (annotation.type === 'text' && annotation.position) {
+                      return (
+                        <foreignObject
+                          key={`annotation-${index}`}
+                          x={annotation.position.x}
+                          y={annotation.position.y}
+                          width="200"
+                          height="auto"
                         >
-                          {annotation.text}
-                        </div>
-                      </foreignObject>
-                    );
-                  }
-                  return null;
-                })}
-            </svg>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-white text-lg">No document loaded</div>
-          </div>
-        )}
+                          <div
+                            style={{
+                              backgroundColor: 'white',
+                              border: '1px solid #ddd',
+                              padding: '4px',
+                              fontSize: '14px',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                            }}
+                          >
+                            {annotation.text}
+                          </div>
+                        </foreignObject>
+                      );
+                    }
+                    return null;
+                  })}
+              </svg>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-white text-lg">No document loaded</div>
+            </div>
+          )}
+        </div>
       </div>
       
       {/* Page Navigation Controls */}
@@ -322,7 +405,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
         </div>
       )}
       
-      {/* Exit Fullscreen Button - Only visible in fullscreen mode */}
+      {/* Exit Fullscreen Button */}
       {uiState.fullscreen && (
         <button 
           className="absolute top-3 right-3 bg-gray-800 bg-opacity-50 text-white rounded-full p-2 hover:bg-opacity-70 transition-opacity"

@@ -15,12 +15,13 @@ const FileNavHeader: React.FC = () => {
   } = useApp();
   
   const [newGroupName, setNewGroupName] = useState('');
-  const [showNewGroupInput, setShowNewGroupInput] = useState(false);
+  const [showGroupDropdown, setShowGroupDropdown] = useState(false);
   
   const activeGroup = groups.find(g => g.id === uiState.activeGroup);
   
   const handleGroupClick = (groupId: string) => {
     setUIState(prev => ({ ...prev, activeGroup: groupId }));
+    setShowGroupDropdown(false);
   };
   
   const handleDocumentClick = (docId: string) => {
@@ -36,12 +37,8 @@ const FileNavHeader: React.FC = () => {
     if (newGroupName.trim()) {
       addGroup(newGroupName);
       setNewGroupName('');
-      setShowNewGroupInput(false);
+      setShowGroupDropdown(false);
     }
-  };
-  
-  const handleAddNewGroup = () => {
-    setShowNewGroupInput(true);
   };
   
   const handleFileManagerClick = () => {
@@ -57,69 +54,65 @@ const FileNavHeader: React.FC = () => {
     <div className="bg-white border-b border-gray-200 h-12 flex items-center px-4 sticky top-14 z-10 overflow-x-auto">
       <div className="flex space-x-4 items-center">
         <button 
-          className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-sm font-medium ${
+          className={`flex items-center p-1.5 rounded-md ${
             uiState.showFileManager ? 'bg-primary-100 text-primary-700' : 'hover:bg-gray-100'
           }`}
           onClick={handleFileManagerClick}
         >
-          <FolderIcon className="h-4 w-4" />
-          <span>Files Manager</span>
+          <FolderIcon className="h-5 w-5" />
         </button>
         
         <div className="border-r border-gray-300 h-6" />
         
-        <div className="flex items-center space-x-2">
-          <span className="text-sm font-medium text-gray-500">Groups:</span>
+        <div className="relative">
+          <button
+            className="flex items-center space-x-2 hover:bg-gray-100 rounded-md px-3 py-1.5"
+            onClick={() => setShowGroupDropdown(!showGroupDropdown)}
+          >
+            <Layers className="h-5 w-5 text-gray-600" />
+            <span className="text-sm font-medium">{activeGroup?.name || 'Select Group'}</span>
+          </button>
           
-          <div className="flex space-x-2 overflow-x-auto hide-scrollbar">
-            {groups.map(group => (
-              <button
-                key={group.id}
-                className={`px-3 py-1 rounded-md text-sm ${
-                  uiState.activeGroup === group.id
-                    ? 'bg-primary-100 text-primary-700 font-medium'
-                    : 'hover:bg-gray-100'
-                }`}
-                onClick={() => handleGroupClick(group.id)}
-              >
-                {group.name}
-              </button>
-            ))}
-            
-            {showNewGroupInput ? (
-              <div className="flex items-center">
-                <input
-                  type="text"
-                  value={newGroupName}
-                  onChange={(e) => setNewGroupName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleNewGroup()}
-                  placeholder="Group name"
-                  className="px-2 py-1 rounded-md border border-gray-300 text-sm w-32"
-                  autoFocus
-                />
+          {showGroupDropdown && (
+            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[200px] z-20">
+              {groups.map(group => (
                 <button
-                  className="ml-1 text-primary-500 hover:text-primary-700"
-                  onClick={handleNewGroup}
+                  key={group.id}
+                  className={`w-full text-left px-4 py-2 text-sm ${
+                    uiState.activeGroup === group.id
+                      ? 'bg-primary-50 text-primary-700'
+                      : 'hover:bg-gray-50'
+                  }`}
+                  onClick={() => handleGroupClick(group.id)}
                 >
-                  <PlusCircle className="h-4 w-4" />
+                  {group.name}
                 </button>
+              ))}
+              <div className="border-t border-gray-200 mt-1 pt-1">
+                <div className="px-4 py-2">
+                  <input
+                    type="text"
+                    value={newGroupName}
+                    onChange={(e) => setNewGroupName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleNewGroup()}
+                    placeholder="New group name"
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                  />
+                  <button
+                    className="mt-1 w-full px-2 py-1 bg-primary-500 text-white rounded text-sm hover:bg-primary-600"
+                    onClick={handleNewGroup}
+                  >
+                    Create Group
+                  </button>
+                </div>
               </div>
-            ) : (
-              <button
-                className="text-primary-500 hover:text-primary-700"
-                onClick={handleAddNewGroup}
-              >
-                <PlusCircle className="h-5 w-5" />
-              </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
         
         <div className="border-r border-gray-300 h-6" />
         
         <div className="flex items-center space-x-2 overflow-x-auto hide-scrollbar">
-          <Layers className="h-4 w-4 text-gray-500" />
-          
           {groupDocuments.length === 0 ? (
             <span className="text-sm text-gray-500 italic">No open documents in this group</span>
           ) : (
@@ -128,7 +121,7 @@ const FileNavHeader: React.FC = () => {
                 <div
                   key={doc.id}
                   className={`flex items-center px-3 py-1 rounded-md text-sm cursor-pointer ${
-                    doc.id === uiState.activeGroup
+                    doc.id === uiState.activeDocument
                       ? 'bg-primary-100 text-primary-700 font-medium'
                       : 'hover:bg-gray-100'
                   }`}
@@ -143,19 +136,9 @@ const FileNavHeader: React.FC = () => {
                   </button>
                 </div>
               ))}
-            
-              <button className="text-primary-500 hover:text-primary-700">
-                <PlusCircle className="h-5 w-5" />
-              </button>
             </>
           )}
         </div>
-        
-        <div className="flex-grow"></div>
-        
-        <button className="text-gray-500 hover:text-gray-700">
-          <ChevronRight className="h-5 w-5" />
-        </button>
       </div>
     </div>
   );

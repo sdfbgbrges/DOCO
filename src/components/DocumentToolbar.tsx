@@ -3,7 +3,7 @@ import {
   Menu, Highlighter, Pencil, Eraser, 
   Type, Minimize2, Maximize2, RotateCw, 
   Search, ToggleLeft, ToggleRight, MoreVertical, 
-  Download, Maximize
+  Download, Maximize, ChevronDown
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import ColorPicker from './ColorPicker';
@@ -23,6 +23,8 @@ const DocumentToolbar: React.FC<DocumentToolbarProps> = ({ documentId }) => {
   const [showHighlighterOptions, setShowHighlighterOptions] = useState(false);
   const [showPencilOptions, setShowPencilOptions] = useState(false);
   const [showMoreOptions, setShowMoreOptions] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   
   if (!document) return null;
   
@@ -31,10 +33,6 @@ const DocumentToolbar: React.FC<DocumentToolbarProps> = ({ documentId }) => {
       ...prev,
       activeTool: prev.activeTool === tool ? null : tool
     }));
-    
-    // Close all dropdowns
-    setShowHighlighterOptions(false);
-    setShowPencilOptions(false);
   };
   
   const handleColorChange = (color: string) => {
@@ -66,7 +64,8 @@ const DocumentToolbar: React.FC<DocumentToolbarProps> = ({ documentId }) => {
   };
   
   const handleRotate = () => {
-    updateDocumentRotation(documentId, (document.rotation + 90) % 360);
+    const newRotation = (document.rotation + 90) % 360;
+    updateDocumentRotation(documentId, newRotation);
   };
   
   const toggleFullscreen = () => {
@@ -95,17 +94,21 @@ const DocumentToolbar: React.FC<DocumentToolbarProps> = ({ documentId }) => {
           <Menu className="h-5 w-5" />
         </button>
         
-        <div className="relative">
+        <div className="flex items-center space-x-2">
           <button 
             className={`hover:bg-gray-700 p-1.5 rounded-md ${
               toolState.activeTool === 'highlight' ? 'bg-gray-700' : ''
             }`}
-            onClick={() => {
-              toggleTool('highlight');
-              setShowHighlighterOptions(!showHighlighterOptions);
-            }}
+            onClick={() => toggleTool('highlight')}
           >
             <Highlighter className="h-5 w-5" color={toolState.activeTool === 'highlight' ? toolState.color : undefined} />
+          </button>
+          
+          <button 
+            className="hover:bg-gray-700 p-1.5 rounded-md"
+            onClick={() => setShowHighlighterOptions(!showHighlighterOptions)}
+          >
+            <ChevronDown className="h-4 w-4" />
           </button>
           
           {showHighlighterOptions && (
@@ -120,7 +123,7 @@ const DocumentToolbar: React.FC<DocumentToolbarProps> = ({ documentId }) => {
               </div>
               
               <div className="mb-3">
-                <div className="text-sm mb-2 text-gray-300">Thickness <span className="text-xs opacity-60">ⓘ</span></div>
+                <div className="text-sm mb-2 text-gray-300">Thickness</div>
                 <div className="flex items-center">
                   <span className="text-xs text-gray-400 mr-2">Thin</span>
                   <input 
@@ -142,13 +145,9 @@ const DocumentToolbar: React.FC<DocumentToolbarProps> = ({ documentId }) => {
                   onClick={toggleTextOnlyHighlight}
                 >
                   {toolState.textOnly ? (
-                    <div className="w-10 h-6 bg-primary-500 rounded-full flex items-center justify-end px-1">
-                      <div className="w-4 h-4 bg-white rounded-full"></div>
-                    </div>
+                    <ToggleRight className="h-5 w-5 text-primary-400" />
                   ) : (
-                    <div className="w-10 h-6 bg-gray-600 rounded-full flex items-center px-1">
-                      <div className="w-4 h-4 bg-white rounded-full"></div>
-                    </div>
+                    <ToggleLeft className="h-5 w-5" />
                   )}
                 </button>
               </div>
@@ -156,17 +155,21 @@ const DocumentToolbar: React.FC<DocumentToolbarProps> = ({ documentId }) => {
           )}
         </div>
         
-        <div className="relative">
+        <div className="flex items-center space-x-2">
           <button 
             className={`hover:bg-gray-700 p-1.5 rounded-md ${
               toolState.activeTool === 'pencil' ? 'bg-gray-700' : ''
             }`}
-            onClick={() => {
-              toggleTool('pencil');
-              setShowPencilOptions(!showPencilOptions);
-            }}
+            onClick={() => toggleTool('pencil')}
           >
             <Pencil className="h-5 w-5" color={toolState.activeTool === 'pencil' ? toolState.color : undefined} />
+          </button>
+          
+          <button 
+            className="hover:bg-gray-700 p-1.5 rounded-md"
+            onClick={() => setShowPencilOptions(!showPencilOptions)}
+          >
+            <ChevronDown className="h-4 w-4" />
           </button>
           
           {showPencilOptions && (
@@ -260,9 +263,24 @@ const DocumentToolbar: React.FC<DocumentToolbarProps> = ({ documentId }) => {
       {/* Right side controls */}
       <div className="flex items-center space-x-4">
         <div className="relative">
-          <button className="hover:bg-gray-700 p-1.5 rounded-md">
+          <button 
+            className={`hover:bg-gray-700 p-1.5 rounded-md ${showSearch ? 'bg-gray-700' : ''}`}
+            onClick={() => setShowSearch(!showSearch)}
+          >
             <Search className="h-5 w-5" />
           </button>
+          
+          {showSearch && (
+            <div className="absolute top-full right-0 mt-1 bg-gray-800 shadow-lg rounded-md p-2 w-64">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search in document..."
+                className="w-full px-2 py-1 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:border-primary-500"
+              />
+            </div>
+          )}
         </div>
         
         <div className="flex items-center space-x-2">

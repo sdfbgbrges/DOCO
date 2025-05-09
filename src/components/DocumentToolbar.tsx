@@ -10,9 +10,10 @@ import ColorPicker from './ColorPicker';
 
 interface DocumentToolbarProps {
   documentId: string;
+  onToggleThumbnails: () => void;
 }
 
-const DocumentToolbar: React.FC<DocumentToolbarProps> = ({ documentId }) => {
+const DocumentToolbar: React.FC<DocumentToolbarProps> = ({ documentId, onToggleThumbnails }) => {
   const { 
     documents, toolState, setToolState, 
     uiState, setUIState, updateDocumentRotation,
@@ -90,7 +91,10 @@ const DocumentToolbar: React.FC<DocumentToolbarProps> = ({ documentId }) => {
     <div className="bg-gray-800 text-white h-12 flex items-center justify-between px-4">
       {/* Left side tools */}
       <div className="flex items-center space-x-4">
-        <button className="hover:bg-gray-700 p-1.5 rounded-md">
+        <button 
+          className="hover:bg-gray-700 p-1.5 rounded-md"
+          onClick={onToggleThumbnails}
+        >
           <Menu className="h-5 w-5" />
         </button>
         
@@ -105,7 +109,9 @@ const DocumentToolbar: React.FC<DocumentToolbarProps> = ({ documentId }) => {
           </button>
           
           <button 
-            className="hover:bg-gray-700 p-1.5 rounded-md"
+            className={`hover:bg-gray-700 p-1.5 rounded-md ${
+              showHighlighterOptions ? 'bg-gray-700' : ''
+            }`}
             onClick={() => setShowHighlighterOptions(!showHighlighterOptions)}
           >
             <ChevronDown className="h-4 w-4" />
@@ -166,7 +172,9 @@ const DocumentToolbar: React.FC<DocumentToolbarProps> = ({ documentId }) => {
           </button>
           
           <button 
-            className="hover:bg-gray-700 p-1.5 rounded-md"
+            className={`hover:bg-gray-700 p-1.5 rounded-md ${
+              showPencilOptions ? 'bg-gray-700' : ''
+            }`}
             onClick={() => setShowPencilOptions(!showPencilOptions)}
           >
             <ChevronDown className="h-4 w-4" />

@@ -20,7 +20,8 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
     updateDocumentZoom,
     uiState,
     toolState,
-    addAnnotation
+    addAnnotation,
+    removeAnnotation
   } = useApp();
   
   const document = documents.find(doc => doc.id === documentId);
@@ -29,9 +30,8 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
   const [pageWidth, setPageWidth] = useState<number>(0);
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [currentPoints, setCurrentPoints] = useState<{ x: number; y: number }[]>([]);
-  const [showThumbnails, setShowThumbnails] = useState(true);
-  const [thumbnailsWidth, setThumbnailsWidth] = useState(200);
-  const [isDraggingThumbnails, setIsDraggingThumbnails] = useState(false);
+  const [showThumbnails, setShowThumbnails] = useState(false);
+  const [currentStrokeId, setCurrentStrokeId] = useState<string | null>(null);
   
   // Get the file for this document
   const file = document ? files.find(f => f.id === document.fileId) : null;
@@ -118,6 +118,8 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
     const x = (e.clientX - rect.left) / document.zoom;
     const y = (e.clientY - rect.top) / document.zoom;
     
+    const strokeId = Math.random().toString(36).substring(7);
+    setCurrentStrokeId(strokeId);
     setCurrentPoints([{ x, y }]);
     setIsDrawing(true);
   };
@@ -136,6 +138,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
     if (isDrawing && document && currentPoints.length > 1) {
       // Save the drawing as an annotation
       addAnnotation(document.id, {
+        id: currentStrokeId!,
         type: toolState.activeTool === 'pencil' ? 'pencil' : 'highlight',
         color: toolState.color,
         thickness: toolState.thickness,
@@ -146,6 +149,28 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
     
     setIsDrawing(false);
     setCurrentPoints([]);
+    setCurrentStrokeId(null);
+  };
+  
+  // Handle eraser
+  const handleErase = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!document || toolState.activeTool !== 'eraser') return;
+    
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    const x = (e.clientX - rect.left) / document.zoom;
+    const y = (e.clientY - rect.top) / document.zoom;
+    
+    // Find the annotation to erase
+    const annotation = document.annotations
+      .find(a => a.page === document.currentPage && a.points?.some(p => {
+        const dx = p.x - x;
+        const dy = p.y - y;
+        return Math.sqrt(dx * dx + dy * dy) < 10;
+      }));
+    
+    if (annotation) {
+      removeAnnotation(document.id, annotation.id);
+    }
   };
   
   // Handle text annotation
@@ -158,7 +183,9 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
     
     const text = prompt('Enter text:');
     if (text) {
+      const annotationId = Math.random().toString(36).substring(7);
       addAnnotation(document.id, {
+        id: annotationId,
         type: 'text',
         color: toolState.color,
         thickness: toolState.thickness,
@@ -183,18 +210,17 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
   return (
     <div className={uiState.fullscreen ? 'fixed inset-0 z-50 bg-gray-900' : 'flex-1 relative overflow-hidden'}>
       {/* Document Toolbar */}
-      <DocumentToolbar documentId={documentId} />
+      <DocumentToolbar 
+        documentId={documentId} 
+        onToggleThumbnails={() => setShowThumbnails(!showThumbnails)} 
+      />
       
       {/* Main Content Area */}
       <div className="flex h-[calc(100%-3rem)]">
         {/* Thumbnails Sidebar */}
         {showThumbnails && (
-          <div 
-            className="bg-gray-900 flex-none relative"
-            style={{ width: thumbnailsWidth }}
-          >
-            {/* Thumbnails */}
-            <div className="h-full overflow-y-auto p-2">
+          <div className="bg-gray-900 w-64 flex-none overflow-y-auto">
+            <div className="p-2">
               {Array.from({ length: numPages || 0 }).map((_, index) => (
                 <div
                   key={index}
@@ -206,7 +232,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
                   <Document file={pdfUrl}>
                     <Page
                       pageNumber={index + 1}
-                      width={thumbnailsWidth - 16}
+                      width={240}
                       renderTextLayer={false}
                       renderAnnotationLayer={false}
                     />
@@ -214,12 +240,6 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
                 </div>
               ))}
             </div>
-            
-            {/* Resize Handle */}
-            <div
-              className="absolute top-0 right-0 w-1 h-full cursor-col-resize bg-gray-700 hover:bg-primary-500"
-              onMouseDown={() => setIsDraggingThumbnails(true)}
-            />
           </div>
         )}
         
@@ -228,17 +248,16 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
           ref={canvasRef}
           className="flex-1 h-full overflow-auto flex justify-center bg-gray-800 p-4"
           onMouseDown={startDrawing}
-          onMouseMove={draw}
+          onMouseMove={(e) => {
+            if (isDrawing) {
+              draw(e);
+            } else if (toolState.activeTool === 'eraser') {
+              handleErase(e);
+            }
+          }}
           onMouseUp={endDrawing}
           onMouseLeave={endDrawing}
           onClick={handleTextAnnotation}
-          onMouseMove={(e) => {
-            if (isDraggingThumbnails) {
-              const newWidth = e.clientX;
-              setThumbnailsWidth(Math.max(150, Math.min(400, newWidth)));
-            }
-          }}
-          onMouseUp={() => setIsDraggingThumbnails(false)}
         >
           {pdfUrl ? (
             <div style={rotationStyle}>
@@ -274,7 +293,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
                       renderAnnotationLayer={true}
                       className="shadow-lg rounded mb-4"
                     />
-                    {numPages && document.currentPage  < numPages && (
+                    {numPages && document.currentPage < numPages && (
                       <Page
                         pageNumber={document.currentPage + 1}
                         width={pageWidth * 0.4}
@@ -308,11 +327,11 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
                 {/* Saved annotations for current page */}
                 {document.annotations
                   .filter(a => a.page === document.currentPage)
-                  .map((annotation, index) => {
+                  .map((annotation) => {
                     if (annotation.type === 'pencil' && annotation.points) {
                       return (
                         <path
-                          key={`annotation-${index}`}
+                          key={annotation.id}
                           d={`M ${annotation.points.map(p => `${p.x},${p.y}`).join(' L ')}`}
                           stroke={annotation.color}
                           strokeWidth={annotation.thickness}
@@ -324,7 +343,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
                     } else if (annotation.type === 'highlight' && annotation.points) {
                       return (
                         <path
-                          key={`annotation-${index}`}
+                          key={annotation.id}
                           d={`M ${annotation.points.map(p => `${p.x},${p.y}`).join(' L ')}`}
                           stroke={annotation.color}
                           strokeWidth={annotation.thickness}
@@ -337,7 +356,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
                     } else if (annotation.type === 'text' && annotation.position) {
                       return (
                         <foreignObject
-                          key={`annotation-${index}`}
+                          key={annotation.id}
                           x={annotation.position.x}
                           y={annotation.position.y}
                           width="200"
@@ -411,6 +430,7 @@ const DocumentViewer: React.FC<DocumentViewerProps> = ({ documentId }) => {
           className="absolute top-3 right-3 bg-gray-800 bg-opacity-50 text-white rounded-full p-2 hover:bg-opacity-70 transition-opacity"
           onClick={() => useApp().setUIState(prev => ({ ...prev, fullscreen: false }))}
         >
+          
           <span className="text-lg">×</span>
         </button>
       )}
